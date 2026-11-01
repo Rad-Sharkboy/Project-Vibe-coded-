@@ -221,6 +221,7 @@ export class SkySystem {
     scene.add(this.mesh)
 
     scene.add(this.sun)
+    scene.add(this.sun.target)
     scene.add(this.hemi)
     scene.add(this.fill)
     this.sun.castShadow = false
@@ -306,6 +307,8 @@ export class SkySystem {
     this.mesh.position.copy(cameraPos)
 
     // scene lights (for NPCs / props)
+    this.sun.target.position.copy(cameraPos)
+    this.sun.target.updateMatrixWorld()
     this.sun.position.copy(this.sunDir).multiplyScalar(80).add(cameraPos)
     this.sun.color.copy(pal.sunColor)
     this.sun.intensity = 1.5 * pal.daylight * (1 - oc * 0.6)
