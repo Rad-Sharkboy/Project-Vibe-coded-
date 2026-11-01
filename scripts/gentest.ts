@@ -110,3 +110,45 @@ console.log('probe lib stair base', !!seen[key(183, 18, 147)], 'top', !!seen[key
 console.log('probe union stair base', !!seen[key(204, 18, 206)], 'top', !!seen[key(191, 25, 206)], 'loft', !!seen[key(190, 25, 204)])
 console.log('library mezzanine reachable:', !!seen[key(181, 25, 130)])
 console.log('union loft reachable:', !!seen[key(190, 25, 204)])
+
+// ---------------- can the player actually trigger each interaction? ----------------
+// mirrors Game.nearestPoi / Game.interact so a POI that no reachable cell can hit shows up here
+console.log('\nInteractability (exact in-game ranges):')
+let deadPois = 0
+for (const poi of gen.pois) {
+  const radius = poi.radius ?? 3
+  let best = Infinity
+  for (let y = 0; y < WY; y++) {
+    for (let z = Math.max(0, poi.z - 8); z <= Math.min(WZ - 1, poi.z + 8); z++) {
+      for (let x = Math.max(0, poi.x - 8); x <= Math.min(WX - 1, poi.x + 8); x++) {
+        if (!seen[key(x, y, z)]) continue
+        const d = Math.hypot(poi.x + 0.5 - (x + 0.5), poi.z + 0.5 - (z + 0.5))
+        if (d < radius && Math.abs(poi.y - y) < 4) best = Math.min(best, d)
+      }
+    }
+  }
+  if (best === Infinity) deadPois++
+  console.log(` ${best === Infinity ? 'DEAD' : 'ok  '} ${poi.id.padEnd(15)} radius ${radius} closest standable ${best === Infinity ? '—' : best.toFixed(2)}m`)
+}
+
+let deadNpcs = 0
+for (const npc of gen.npcs) {
+  let best = Infinity
+  for (let y = 0; y < WY; y++) {
+    for (let z = Math.max(0, npc.z - 7); z <= Math.min(WZ - 1, npc.z + 7); z++) {
+      for (let x = Math.max(0, npc.x - 7); x <= Math.min(WX - 1, npc.x + 7); x++) {
+        if (!seen[key(x, y, z)]) continue
+        const dx = npc.x + 0.5 - (x + 0.5)
+        const dz = npc.z + 0.5 - (z + 0.5)
+        const dy = npc.y + 1.2 - (y + 1.62)
+        const d = Math.hypot(dx, dy, dz)
+        if (d < 3.6) best = Math.min(best, d)
+      }
+    }
+  }
+  if (best === Infinity) {
+    deadNpcs++
+    console.log(` DEAD npc ${npc.id} ${npc.name} @ ${npc.x},${npc.y},${npc.z}`)
+  }
+}
+console.log(`\nunreachable interactions: ${deadPois} POIs, ${deadNpcs} NPCs`)

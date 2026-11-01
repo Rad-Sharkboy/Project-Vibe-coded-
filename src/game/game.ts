@@ -42,6 +42,11 @@ export class Game {
   private input: InputState = { forward: false, back: false, left: false, right: false, jump: false, sprint: false, crouch: false }
   private locked = false
   private ignoreUnlock = false
+  private pointerFallback = false
+  private everLocked = false
+  private lockWatch = 0
+  private dragging = false
+  private dragDist = 0
   private targetBlock: ReturnType<typeof raycastVoxel> = null
   private highlight: THREE.LineSegments
   private breakBurst: THREE.InstancedMesh
@@ -75,11 +80,13 @@ export class Game {
   private hasObjective = false
   private lastZone = ''
   private disposing = false
+  private loopError = false
+  private errorCount = 0
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', stencil: false })
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75))
     renderer.setSize(window.innerWidth, window.innerHeight)
     renderer.outputColorSpace = THREE.SRGBColorSpace
     renderer.shadowMap.enabled = false
@@ -129,6 +136,21 @@ export class Game {
 
   // ---------------------------------------------------------------- loading
   async load() {
+    try {
+      await this.loadWorld()
+    } catch (err) {
+      console.error('[campus craft] load failed', err)
+      const st = store()
+      st.set({
+        progress: 0,
+        progressLabel: 'Campus failed to load',
+        progressSub: String(err).slice(0, 140),
+      })
+      st.pushToast({ kind: 'info', title: 'Load error', body: String(err).slice(0, 120), icon: '⚠️' })
+    }
+  }
+
+  private async loadWorld() {
     const st = store()
     st.set({ progress: 0.02, progressLabel: 'Surveying the campus', progressSub: 'Placing bricks, one by one' })
     await nextFrame()
@@ -275,13 +297,42 @@ export class Game {
     this.player.onJump = () => audio.jump()
     this.player.onLand = () => audio.land()
     this.requestLock()
+    window.setTimeout(() => {
+      store().pushToast({ kind: 'info', title: 'Room 214', body: 'WASD to walk · E to talk to Juno · Tab for the map', icon: '🎓' })
+    }, 1100)
   }
 
   requestLock() {
     if (this.mode !== 'player' && this.mode !== 'photo') return
+    if (this.pointerFallback) return
     if (document.pointerLockElement === this.canvas) return
-    this.ignoreUnlock = true
-    void this.canvas.requestPointerLock?.()
+    try {
+      const r = this.canvas.requestPointerLock?.() as unknown as Promise<void> | undefined
+      if (r && typeof r.catch === 'function') r.catch(() => this.enablePointerFallback())
+    } catch {
+      this.enablePointerFallback()
+      return
+    }
+    // If the browser silently refuses (common inside sandboxed iframes) fall back to
+    // drag-to-look after a moment — but only if the lock has never worked this session.
+    window.clearTimeout(this.lockWatch)
+    this.lockWatch = window.setTimeout(() => {
+      if (!this.everLocked && document.pointerLockElement !== this.canvas) this.enablePointerFallback()
+    }, 800)
+  }
+
+  private enablePointerFallback() {
+    if (this.pointerFallback || this.everLocked) return
+    this.pointerFallback = true
+    this.ignoreUnlock = false
+    window.clearTimeout(this.lockWatch)
+    store().set({ pointerLocked: true })
+    store().pushToast({
+      kind: 'info',
+      title: 'Drag to look around',
+      body: 'Mouse capture is blocked in this embedded view — hold left mouse and drag to look. Click to mine.',
+      icon: '🖱️',
+    })
   }
 
   // ---------------------------------------------------------------- events
@@ -302,9 +353,27 @@ export class Game {
         this.requestLock()
         return
       }
+      if (s.showJournal || s.showBag) {
+        s.set({ showJournal: false, showBag: false })
+        this.resumePlay()
+        return
+      }
+      if (s.screen === 'playing' && (this.pointerFallback || !document.pointerLockElement)) {
+        s.set({ screen: 'paused' })
+        this.mode = 'player'
+        audio.ui('close')
+      }
+      return
+    }
+    if (s.screen === 'cinematic') {
+      if (e.code === 'Space' || e.code === 'Enter' || e.code === 'Escape') {
+        e.preventDefault()
+        this.beginPlay()
+      }
       return
     }
     if (s.screen !== 'playing' && s.screen !== 'photo') return
+    if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault()
     this.keys.add(e.code)
     if (e.code === 'KeyE') {
       if (!s.dialogue) this.interact()
@@ -352,21 +421,50 @@ export class Game {
   }
 
   private onMouseMove = (e: MouseEvent) => {
-    if (!this.locked) return
     if (this.mode !== 'player' && this.mode !== 'photo') return
     const sens = store().settings.sensitivity
+    if (this.pointerFallback) {
+      if (!this.dragging) return
+      const dx = e.movementX || 0
+      const dy = e.movementY || 0
+      this.dragDist += Math.abs(dx) + Math.abs(dy)
+      this.player.look(dx, dy, sens)
+      return
+    }
+    if (!this.locked) return
     this.player.look(e.movementX, e.movementY, sens)
   }
 
   private onMouseDown = (e: MouseEvent) => {
     if (store().dialogue) return
+    if (store().screen === 'cinematic') {
+      this.beginPlay()
+      return
+    }
     if (this.mode === 'orbit' || this.mode === 'cinematic') return
+    const onCanvas = e.target === this.canvas
+    if (this.pointerFallback) {
+      if (!onCanvas) return
+      if (e.button === 0) {
+        this.dragging = true
+        this.dragDist = 0
+      } else if (e.button === 2) this.place()
+      return
+    }
     if (!this.locked) {
       this.requestLock()
       return
     }
     if (e.button === 0) this.mine()
     else if (e.button === 2) this.place()
+  }
+
+  private onMouseUp = (e: MouseEvent) => {
+    if (!this.pointerFallback) return
+    if (e.button !== 0 || !this.dragging) return
+    this.dragging = false
+    // a click that did not drag is a mine action; a drag was just looking around
+    if (this.dragDist < 9 && e.target === this.canvas) this.mine()
   }
 
   private onWheel = (e: WheelEvent) => {
@@ -379,20 +477,42 @@ export class Game {
   private onLockChange = () => {
     const locked = document.pointerLockElement === this.canvas
     this.locked = locked
+    if (locked) {
+      this.everLocked = true
+      this.ignoreUnlock = false
+      window.clearTimeout(this.lockWatch)
+    }
     const s = store()
-    s.set({ pointerLocked: locked })
-    if (!locked && this.ignoreUnlock) {
+    s.set({ pointerLocked: locked || this.pointerFallback })
+    if (locked) return
+    if (this.ignoreUnlock) {
       this.ignoreUnlock = false
       return
     }
-    if (!locked && (s.screen === 'playing' || s.screen === 'photo') && !s.dialogue) {
-      s.set({ screen: 'paused' })
-      this.mode = 'player'
-      audio.ui('close')
-    }
+    // Only treat an unlock as "the player pressed Esc" when they are actually in the world:
+    // dialogues, the journal and the bag all deliberately release the cursor.
+    if (s.dialogue || s.showJournal || s.showBag) return
+    if (s.screen !== 'playing' && s.screen !== 'photo') return
+    s.set({ screen: 'paused' })
+    this.mode = 'player'
+    audio.ui('close')
   }
 
   private onContext = (e: Event) => e.preventDefault()
+
+  private onLockError = () => this.enablePointerFallback()
+
+  private onRuntimeError = (e: ErrorEvent) => {
+    console.error('[campus craft]', e.error || e.message)
+    if (this.errorCount++ > 2) return
+    store().pushToast({ kind: 'info', title: 'Runtime error', body: String(e.message).slice(0, 110), icon: '⚠️' })
+  }
+
+  private onRejection = (e: PromiseRejectionEvent) => {
+    console.error('[campus craft] unhandled rejection', e.reason)
+    if (this.errorCount++ > 2) return
+    store().pushToast({ kind: 'info', title: 'Runtime error', body: String(e.reason).slice(0, 110), icon: '⚠️' })
+  }
 
   private bindEvents() {
     window.addEventListener('resize', this.onResize)
@@ -400,6 +520,10 @@ export class Game {
     window.addEventListener('keyup', this.onKeyUp)
     window.addEventListener('mousemove', this.onMouseMove)
     window.addEventListener('mousedown', this.onMouseDown)
+    window.addEventListener('mouseup', this.onMouseUp)
+    document.addEventListener('pointerlockerror', this.onLockError)
+    window.addEventListener('error', this.onRuntimeError)
+    window.addEventListener('unhandledrejection', this.onRejection)
     window.addEventListener('wheel', this.onWheel, { passive: true })
     document.addEventListener('pointerlockchange', this.onLockChange)
     this.canvas.addEventListener('contextmenu', this.onContext)
@@ -413,6 +537,10 @@ export class Game {
     window.removeEventListener('keyup', this.onKeyUp)
     window.removeEventListener('mousemove', this.onMouseMove)
     window.removeEventListener('mousedown', this.onMouseDown)
+    window.removeEventListener('mouseup', this.onMouseUp)
+    document.removeEventListener('pointerlockerror', this.onLockError)
+    window.removeEventListener('error', this.onRuntimeError)
+    window.removeEventListener('unhandledrejection', this.onRejection)
     window.removeEventListener('wheel', this.onWheel)
     document.removeEventListener('pointerlockchange', this.onLockChange)
     this.canvas.removeEventListener('contextmenu', this.onContext)
@@ -991,6 +1119,7 @@ export class Game {
     }
 
     const s = store()
+    try {
     this.updateInput()
     const active = this.mode === 'player' || this.mode === 'photo'
     if (active) {
@@ -1063,8 +1192,13 @@ export class Game {
       s.set({ fps: Math.round(avg), hours: this.sky.hours, day: this.sky.dayCount })
     }
 
+    } catch (err) {
+      if (!this.loopError) {
+        this.loopError = true
+        console.error('[campus craft] frame error', err)
+      }
+    }
     this.renderer.render(this.scene, this.camera)
-    void this.soundStepCooldown
   }
 
   private updateObjectiveStore() {
@@ -1077,9 +1211,14 @@ export class Game {
     const dx = this.objectiveTarget.x - this.player.pos.x
     const dz = this.objectiveTarget.z - this.player.pos.z
     const dist = Math.hypot(dx, dz)
-    const bearing = Math.atan2(dx, -dz)
-    const rel = ((bearing + this.player.yaw + Math.PI * 3) % (Math.PI * 2)) - Math.PI
-    s.set({ objective: { label: step.hint, x: this.objectiveTarget.x, z: this.objectiveTarget.z, bearing: rel, dist } })
+    if (dist > 260) return
+    // angle to turn, clockwise positive (matches CSS rotate on the ↑ badge)
+    const sinY = Math.sin(this.player.yaw)
+    const cosY = Math.cos(this.player.yaw)
+    const along = dx * -sinY + dz * -cosY
+    const side = dx * cosY + dz * -sinY
+    const bearing = Math.atan2(side, along)
+    s.set({ objective: { label: step.hint, x: this.objectiveTarget.x, z: this.objectiveTarget.z, bearing, dist } })
   }
 
   // ---------------------------------------------------------------- helpers for UI

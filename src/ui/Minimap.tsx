@@ -30,9 +30,9 @@ export default function Minimap() {
       ctx.clearRect(0, 0, w, h)
       ctx.fillStyle = '#080b14'
       ctx.fillRect(0, 0, w, h)
-      // rotate map so player always faces up
+      // rotate map so the player always faces up (canvas y+ is world z+, so yaw is +)
       ctx.translate(w / 2, h / 2)
-      ctx.rotate(-p.yaw)
+      ctx.rotate(p.yaw)
       ctx.scale(zoom, zoom)
       ctx.imageSmoothingEnabled = false
       ctx.translate(-p.x, -p.z)
@@ -46,8 +46,8 @@ export default function Minimap() {
       for (const n of npcs) {
         const dx = (n.x - p.x) * zoom
         const dz = (n.z - p.z) * zoom
-        const cos = Math.cos(-p.yaw)
-        const sin = Math.sin(-p.yaw)
+        const cos = Math.cos(p.yaw)
+        const sin = Math.sin(p.yaw)
         const rx = dx * cos - dz * sin
         const rz = dx * sin + dz * cos
         if (Math.hypot(rx, rz) > w / 2 - 8) continue
@@ -67,8 +67,8 @@ export default function Minimap() {
         const oz = parseFloat(objEl.dataset.objectiveZ || '0')
         const dx = (ox - p.x) * zoom
         const dz = (oz - p.z) * zoom
-        const cos = Math.cos(-p.yaw)
-        const sin = Math.sin(-p.yaw)
+        const cos = Math.cos(p.yaw)
+        const sin = Math.sin(p.yaw)
         const rx = dx * cos - dz * sin
         const rz = dx * sin + dz * cos
         const clampR = w / 2 - 10
@@ -99,7 +99,7 @@ export default function Minimap() {
       ctx.restore()
 
       // compass N
-      const northX = w / 2 + Math.sin(-p.yaw) * (w / 2 - 14)
+      const northX = w / 2 + Math.sin(p.yaw) * (w / 2 - 14)
       const northZ = h / 2 - Math.cos(p.yaw) * (h / 2 - 14)
       ctx.font = `${9 * dpr}px 'JetBrains Mono', monospace`
       ctx.fillStyle = 'rgba(255,255,255,0.65)'

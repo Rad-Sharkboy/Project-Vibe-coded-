@@ -103,8 +103,8 @@ export class Player {
   }
 
   look(dx: number, dy: number, sens = 1) {
-    this.yaw -= dx * 0.0022 * sens
-    this.pitch -= dy * 0.0022 * sens
+    this.yaw -= dx * 0.0025 * sens
+    this.pitch -= dy * 0.0025 * sens
     const lim = Math.PI / 2 - 0.02
     this.pitch = Math.max(-lim, Math.min(lim, this.pitch))
   }
@@ -148,15 +148,16 @@ export class Player {
     if (input.left) ix -= 1
     if (input.right) ix += 1
     const len = Math.hypot(ix, iz)
+    // camera basis for a Y-rotation yaw: forward = (-sin, -cos), right = (cos, -sin)
+    const sinY = Math.sin(this.yaw)
+    const cosY = Math.cos(this.yaw)
     let wishX = 0
     let wishZ = 0
     if (len > 0) {
       ix /= len
       iz /= len
-      const sinY = Math.sin(this.yaw)
-      const cosY = Math.cos(this.yaw)
-      wishX = ix * cosY - iz * sinY
-      wishZ = ix * sinY + iz * cosY
+      wishX = ix * cosY + iz * sinY
+      wishZ = -ix * sinY + iz * cosY
     }
 
     const targetVX = wishX * speed
@@ -175,12 +176,12 @@ export class Player {
     // jump
     if (input.jump && !this.inWater) {
       if (this.onGround) {
-        this.vel.y = 8.6
+        this.vel.y = 9.8
         this.onGround = false
         this.jumpsLeft = this.canDoubleJump ? 1 : 0
         this.onJump?.()
       } else if (this.jumpsLeft > 0) {
-        this.vel.y = 7.6
+        this.vel.y = 8.6
         this.jumpsLeft--
         this.onJump?.()
       }
@@ -246,7 +247,8 @@ export class Player {
 
     const fovTarget = this.sprinting ? 82 : this.inWater ? 68 : 72
     this.camFov = damp(this.camFov, fovTarget, 6, dt)
-    this.camRoll = damp(this.camRoll, -this.vel.x * 0.004, 6, dt)
+    const lateral = this.vel.x * cosY - this.vel.z * sinY
+    this.camRoll = damp(this.camRoll, -lateral * 0.0026, 6, dt)
     this.wasOnGround = this.onGround
   }
 

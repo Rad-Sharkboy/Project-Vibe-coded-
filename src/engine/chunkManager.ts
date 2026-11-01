@@ -108,7 +108,7 @@ export class WorldRenderer {
 
   setBlock(x: number, y: number, z: number, blockId: number) {
     this.world.set(x, y, z, blockId)
-    this.world.relight(x, y, z, 14)
+    this.world.relight(x, y, z, 11)
     this.rebuildAround(x, z)
   }
 

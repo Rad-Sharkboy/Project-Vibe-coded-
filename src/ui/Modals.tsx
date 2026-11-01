@@ -32,6 +32,7 @@ export function Journal() {
 
   const close = () => {
     set({ showJournal: false })
+    gameRef.current?.resumePlay()
     audio.ui('close')
     gameRef.current?.resumePlay()
   }
