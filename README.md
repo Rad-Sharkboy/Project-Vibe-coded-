@@ -17,7 +17,7 @@ Click **Enter Campus**. A cinematic flyover of the campus at dawn drops you into
 
 | Action | Key |
 | --- | --- |
-| Move / look | `WASD` + mouse |
+| Move / look | `WASD` + mouse (drag to look if the browser blocks mouse capture) |
 | Sprint / crouch | `Shift` / `Ctrl` |
 | Jump | `Space` |
 | Interact | `E` |
@@ -106,10 +106,13 @@ scripts/
 npm run typecheck            # tsc, strict, no emit
 npm run build                # typecheck + production bundle
 npx esbuild scripts/gentest.ts --bundle --platform=node --outfile=/tmp/gentest.mjs --format=esm \
-  && node /tmp/gentest.mjs   # validates geometry, lighting and that everything is reachable
+  && node /tmp/gentest.mjs   # geometry, lighting, reachability, interact ranges
+
+npx esbuild scripts/playtest.ts --bundle --platform=node --outfile=/tmp/playtest.mjs --format=esm \
+  && node /tmp/playtest.mjs  # movement is camera-relative, jump height, wall collision, spawn safety
 ```
 
-`gentest` builds the world, bakes light, meshes every chunk, then BFS-floods every standable cell from the spawn point and asserts that all 24 points of interest and all 25 NPCs are reachable — it is how the staircases were debugged.
+`gentest` builds the world, bakes light, meshes every chunk, then BFS-floods every standable cell from the spawn point and asserts that all 24 points of interest and all 25 NPCs are reachable — it is how the staircases were debugged. `gentest` also asserts that every point of interest and every NPC can be reached *and* is inside its exact in-game interaction radius, and `playtest` drives the real `Player` class against the real world and checks the walk direction against three.js' own camera basis.
 
 ---
 

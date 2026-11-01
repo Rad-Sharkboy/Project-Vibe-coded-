@@ -78,9 +78,9 @@ const fragmentShader = /* glsl */ `
     float wrap = clamp(dot(n, uSunDir) * 0.5 + 0.5, 0.0, 1.0);
     float skyI = vLight.g;
 
-    vec3 ambient = uAmbient * (0.26 + 0.62 * skyI);
-    vec3 sun = uSunColor * (diff * 0.70 + wrap * 0.15) * mix(0.30, 1.0, skyI);
-    vec3 glow = vGlow * uGlowColor;
+    vec3 ambient = uAmbient * (0.30 + 0.60 * skyI);
+    vec3 sun = uSunColor * (diff * 0.64 + wrap * 0.14) * mix(0.30, 1.0, skyI);
+    vec3 glow = vGlow * uGlowColor * 1.18;
 
     // subtle vertical ambient gradient (bounce light from ground)
     float bounce = clamp(0.5 - n.y * 0.5, 0.0, 1.0) * 0.05 * skyI;

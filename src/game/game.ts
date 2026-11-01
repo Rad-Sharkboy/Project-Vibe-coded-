@@ -498,7 +498,10 @@ export class Game {
     audio.ui('close')
   }
 
-  private onContext = (e: Event) => e.preventDefault()
+  private onContext = (e: Event) => {
+    const sc = store().screen
+    if (sc === 'playing' || sc === 'photo' || sc === 'cinematic') e.preventDefault()
+  }
 
   private onLockError = () => this.enablePointerFallback()
 
@@ -526,7 +529,7 @@ export class Game {
     window.addEventListener('unhandledrejection', this.onRejection)
     window.addEventListener('wheel', this.onWheel, { passive: true })
     document.addEventListener('pointerlockchange', this.onLockChange)
-    this.canvas.addEventListener('contextmenu', this.onContext)
+    window.addEventListener('contextmenu', this.onContext)
     window.addEventListener('blur', () => this.keys.clear())
   }
 
@@ -543,7 +546,7 @@ export class Game {
     window.removeEventListener('unhandledrejection', this.onRejection)
     window.removeEventListener('wheel', this.onWheel)
     document.removeEventListener('pointerlockchange', this.onLockChange)
-    this.canvas.removeEventListener('contextmenu', this.onContext)
+    window.removeEventListener('contextmenu', this.onContext)
     this.worldRenderer?.dispose()
     this.renderer.dispose()
   }
